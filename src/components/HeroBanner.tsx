@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { AdBanner } from '../types';
 import { Language, translations } from '../translations';
+import { resolveImageUrl, CDN_FALLBACKS } from '../utils/mediaUtils';
 
 interface HeroBannerProps {
   banners: AdBanner[];
@@ -100,12 +101,15 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             className="min-w-full h-full relative shrink-0 overflow-hidden"
           >
             <img
-              src={banner.imageUrl}
+              src={resolveImageUrl(banner.imageUrl, 'hero')}
               alt={banner.title}
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover object-center filter brightness-90 transform scale-102 transition-transform duration-1000 ease-out"
               onError={(e) => {
-                (e.target as HTMLElement).style.display = 'none';
+                const target = e.currentTarget;
+                if (!target.src.includes('unsplash')) {
+                  target.src = CDN_FALLBACKS.hero;
+                }
               }}
             />
             {/* Measured contrast scrim for high WCAG AA readability */}

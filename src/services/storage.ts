@@ -20,6 +20,7 @@ import {
   INITIAL_REVIEWS, 
   INITIAL_EMAIL_LOGS 
 } from '../data/mockData';
+import { resolveImageUrl, formatYouTubeEmbedUrl } from '../utils/mediaUtils';
 
 const STORAGE_KEYS = {
   PRODUCTS: 'dealhub_products',
@@ -59,12 +60,16 @@ function safeSet<T>(key: string, value: T): void {
 export const StorageService = {
   // Products
   getProducts(): Product[] {
-    const prods = safeGet<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+    let prods = safeGet<Product[]>(STORAGE_KEYS.PRODUCTS, []);
     if (!prods || prods.length === 0) {
       safeSet(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
-      return INITIAL_PRODUCTS;
+      prods = INITIAL_PRODUCTS;
     }
-    return prods;
+    return prods.map(p => ({
+      ...p,
+      imageUrl: resolveImageUrl(p.imageUrl, 'hero'),
+      videoUrl: p.videoUrl ? formatYouTubeEmbedUrl(p.videoUrl) : undefined,
+    }));
   },
 
   saveProducts(products: Product[]): void {
@@ -139,12 +144,15 @@ export const StorageService = {
 
   // Banners
   getBanners(): AdBanner[] {
-    const banners = safeGet<AdBanner[]>(STORAGE_KEYS.BANNERS, []);
+    let banners = safeGet<AdBanner[]>(STORAGE_KEYS.BANNERS, []);
     if (!banners || banners.length === 0) {
       safeSet(STORAGE_KEYS.BANNERS, INITIAL_BANNERS);
-      return INITIAL_BANNERS;
+      banners = INITIAL_BANNERS;
     }
-    return banners;
+    return banners.map(b => ({
+      ...b,
+      imageUrl: resolveImageUrl(b.imageUrl, 'hero'),
+    }));
   },
 
   saveBanners(banners: AdBanner[]): void {
@@ -162,12 +170,16 @@ export const StorageService = {
 
   // Videos
   getVideos(): VideoAd[] {
-    const videos = safeGet<VideoAd[]>(STORAGE_KEYS.VIDEOS, []);
+    let videos = safeGet<VideoAd[]>(STORAGE_KEYS.VIDEOS, []);
     if (!videos || videos.length === 0) {
       safeSet(STORAGE_KEYS.VIDEOS, INITIAL_VIDEOS);
-      return INITIAL_VIDEOS;
+      videos = INITIAL_VIDEOS;
     }
-    return videos;
+    return videos.map(v => ({
+      ...v,
+      thumbnailUrl: resolveImageUrl(v.thumbnailUrl, 'earbuds'),
+      videoUrl: formatYouTubeEmbedUrl(v.videoUrl),
+    }));
   },
 
   saveVideos(videos: VideoAd[]): void {

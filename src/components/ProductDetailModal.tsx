@@ -22,6 +22,7 @@ import { Product, CustomerReview, PriceDropAlert } from '../types';
 import { Language, translations } from '../translations';
 import { StorageService } from '../services/storage';
 import { SocialShareMenu } from './SocialShareMenu';
+import { resolveImageUrl, CDN_FALLBACKS, formatYouTubeEmbedUrl } from '../utils/mediaUtils';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -140,9 +141,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <div className="space-y-4">
               <div className="relative aspect-4/3 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center">
                 <img
-                  src={product.imageUrl}
+                  src={resolveImageUrl(product.imageUrl, 'hero')}
                   alt={product.title}
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (!target.src.includes('unsplash')) {
+                      target.src = CDN_FALLBACKS.hero;
+                    }
+                  }}
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute top-3 left-3 bg-red-600 text-white font-bold text-xs px-2.5 py-1 rounded shadow-sm">
@@ -159,11 +166,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </div>
                   <div className="aspect-video w-full rounded-lg overflow-hidden bg-black">
                     <iframe
-                      src={product.videoUrl}
+                      src={formatYouTubeEmbedUrl(product.videoUrl)}
                       title={product.title}
                       className="w-full h-full border-0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                       allowFullScreen
+                      loading="lazy"
                     />
                   </div>
                 </div>

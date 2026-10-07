@@ -15,6 +15,7 @@ import confetti from 'canvas-confetti';
 import { Product } from '../types';
 import { Language, translations } from '../translations';
 import { SocialShareMenu } from './SocialShareMenu';
+import { resolveImageUrl, CDN_FALLBACKS } from '../utils/mediaUtils';
 
 interface ProductCardProps {
   product: Product;
@@ -97,20 +98,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
       {/* Product Image slot with fallback container */}
       <div className="relative aspect-4/3 w-full bg-slate-100 dark:bg-slate-800/60 overflow-hidden flex items-center justify-center">
-        {!imgError ? (
-          <img
-            src={product.imageUrl}
-            alt={product.title}
-            referrerPolicy="no-referrer"
-            onError={() => setImgError(true)}
-            className="w-full h-full object-cover object-center group-hover:scale-102 transition-transform duration-300"
-          />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center bg-linear-to-tr from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700">
-            <Tag className="w-8 h-8 text-slate-400 mb-1" />
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400 line-clamp-1">{product.title}</span>
-          </div>
-        )}
+        <img
+          src={resolveImageUrl(product.imageUrl, 'hero')}
+          alt={product.title}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (!target.src.includes('unsplash')) {
+              target.src = CDN_FALLBACKS.hero;
+            }
+          }}
+          className="w-full h-full object-cover object-center group-hover:scale-102 transition-transform duration-300"
+        />
       </div>
 
       {/* Product Content Body */}
