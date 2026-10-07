@@ -1,0 +1,6 @@
+{
+  "name": "DealHub Affiliate & E-Commerce Marketing Hub",
+  "description": "High-converting affiliate marketing landing page & admin control center for Amazon, Flipkart, and Meesho deals with SEO optimization, real-time analytics, ad spend ROI tracking, and order management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
