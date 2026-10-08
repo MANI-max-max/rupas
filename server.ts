@@ -24,6 +24,23 @@ const isProduction = process.env.NODE_ENV === 'production';
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
+// Universal CORS & Aggressive No-Cache Middleware for cross-device synchronization
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Cache-Control, Pragma');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
+
 // Database persistence setup
 const DATA_DIR = path.resolve(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
@@ -125,11 +142,60 @@ function getActiveVideos(db: ServerDB): VideoAd[] {
   return db.videos.filter(v => !deletedSet.has(v.id));
 }
 
+// ---------------- REAL-TIME MULTI-DEVICE SSE BROADCASTING ----------------
+const sseClients = new Set<express.Response>();
+
+function broadcastLiveEvent(event: { type: string; [key: string]: any }) {
+  const payload = `data: ${JSON.stringify({ ...event, timestamp: Date.now() })}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(payload);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
+// Keep-alive heartbeat every 15 seconds to keep SSE connections open through proxies
+setInterval(() => {
+  for (const client of sseClients) {
+    try {
+      client.write(`: heartbeat\n\n`);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}, 15000);
+
 // ---------------- API ROUTES ----------------
+
+// Live SSE Stream for Instant Real-Time Cross-Device Synchronization
+app.get('/api/live-stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const db = getDatabase();
+  // Send immediate initial sync state upon connection
+  res.write(`data: ${JSON.stringify({
+    type: 'CONNECTED',
+    deletedProductIds: db.deletedProductIds,
+    products: getActiveProducts(db),
+    timestamp: Date.now()
+  })}\n\n`);
+
+  sseClients.add(res);
+
+  req.on('close', () => {
+    sseClients.delete(res);
+  });
+});
 
 // Health check
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({ status: 'ok', activeClients: sseClients.size, time: new Date().toISOString() });
 });
 
 // Full Sync endpoint for cross-device synchronization
@@ -173,7 +239,9 @@ app.post('/api/products', (req, res) => {
   }
 
   saveDatabase(db);
-  res.status(201).json({ product, products: getActiveProducts(db) });
+  const active = getActiveProducts(db);
+  broadcastLiveEvent({ type: 'PRODUCT_SAVED', product, products: active });
+  res.status(201).json({ product, products: active });
 });
 
 app.put('/api/products/:id', (req, res) => {
@@ -188,11 +256,13 @@ app.put('/api/products/:id', (req, res) => {
 
   db.products[idx] = { ...db.products[idx], ...updatedData, id };
   saveDatabase(db);
-  res.json({ product: db.products[idx], products: getActiveProducts(db) });
+  const active = getActiveProducts(db);
+  broadcastLiveEvent({ type: 'PRODUCT_SAVED', product: db.products[idx], products: active });
+  res.json({ product: db.products[idx], products: active });
 });
 
 // PERMANENT DELETE: Removes from db.products AND records in db.deletedProductIds
-// This guarantees that ANY other device opening the website will NEVER see this product!
+// Instantly broadcasts to ALL connected devices (phones, computers, tabs)
 app.delete('/api/products/:id', (req, res) => {
   const { id } = req.params;
   const db = getDatabase();
@@ -206,13 +276,23 @@ app.delete('/api/products/:id', (req, res) => {
   db.products = db.products.filter(p => p.id !== id);
 
   saveDatabase(db);
-  console.log(`[Cross-Device Sync] Product "${id}" permanently deleted across all devices.`);
+  const active = getActiveProducts(db);
+  
+  // Broadcast INSTANT real-time deletion event to all devices
+  broadcastLiveEvent({
+    type: 'PRODUCT_DELETED',
+    id,
+    deletedProductIds: db.deletedProductIds,
+    products: active
+  });
+
+  console.log(`[Cross-Device Live Sync] Product "${id}" permanently deleted across all devices.`);
 
   res.json({
     success: true,
     deletedId: id,
     deletedProductIds: db.deletedProductIds,
-    products: getActiveProducts(db)
+    products: active
   });
 });
 
@@ -234,13 +314,21 @@ app.post('/api/products/batch-delete', (req, res) => {
 
   db.products = db.products.filter(p => !idSet.has(p.id));
   saveDatabase(db);
+  const active = getActiveProducts(db);
 
-  console.log(`[Cross-Device Sync] Batch deleted ${ids.length} products across all devices:`, ids);
+  broadcastLiveEvent({
+    type: 'PRODUCTS_BATCH_DELETED',
+    ids,
+    deletedProductIds: db.deletedProductIds,
+    products: active
+  });
+
+  console.log(`[Cross-Device Live Sync] Batch deleted ${ids.length} products across all devices:`, ids);
 
   res.json({
     success: true,
     deletedProductIds: db.deletedProductIds,
-    products: getActiveProducts(db)
+    products: active
   });
 });
 
@@ -305,7 +393,9 @@ app.post('/api/banners', (req, res) => {
   db.deletedBannerIds = db.deletedBannerIds.filter(id => id !== banner.id);
   db.banners.unshift(banner);
   saveDatabase(db);
-  res.status(201).json({ banner, banners: getActiveBanners(db) });
+  const active = getActiveBanners(db);
+  broadcastLiveEvent({ type: 'BANNER_SAVED', banner, banners: active });
+  res.status(201).json({ banner, banners: active });
 });
 
 app.delete('/api/banners/:id', (req, res) => {
@@ -316,7 +406,9 @@ app.delete('/api/banners/:id', (req, res) => {
   }
   db.banners = db.banners.filter(b => b.id !== id);
   saveDatabase(db);
-  res.json({ success: true, banners: getActiveBanners(db) });
+  const active = getActiveBanners(db);
+  broadcastLiveEvent({ type: 'BANNER_DELETED', id, deletedBannerIds: db.deletedBannerIds, banners: active });
+  res.json({ success: true, banners: active });
 });
 
 // Videos API
@@ -331,7 +423,9 @@ app.post('/api/videos', (req, res) => {
   db.deletedVideoIds = db.deletedVideoIds.filter(id => id !== video.id);
   db.videos.unshift(video);
   saveDatabase(db);
-  res.status(201).json({ video, videos: getActiveVideos(db) });
+  const active = getActiveVideos(db);
+  broadcastLiveEvent({ type: 'VIDEO_SAVED', video, videos: active });
+  res.status(201).json({ video, videos: active });
 });
 
 app.delete('/api/videos/:id', (req, res) => {
@@ -342,7 +436,9 @@ app.delete('/api/videos/:id', (req, res) => {
   }
   db.videos = db.videos.filter(v => v.id !== id);
   saveDatabase(db);
-  res.json({ success: true, videos: getActiveVideos(db) });
+  const active = getActiveVideos(db);
+  broadcastLiveEvent({ type: 'VIDEO_DELETED', id, deletedVideoIds: db.deletedVideoIds, videos: active });
+  res.json({ success: true, videos: active });
 });
 
 // Orders API (Multi-device live sync)
@@ -356,6 +452,7 @@ app.post('/api/orders', (req, res) => {
   const db = getDatabase();
   db.orders.unshift(order);
   saveDatabase(db);
+  broadcastLiveEvent({ type: 'ORDER_SAVED', order, orders: db.orders });
   res.status(201).json({ order, orders: db.orders });
 });
 
@@ -375,6 +472,7 @@ app.patch('/api/orders/:id/status', (req, res) => {
   if (trackingNumber) order.trackingNumber = trackingNumber;
 
   saveDatabase(db);
+  broadcastLiveEvent({ type: 'ORDER_STATUS_UPDATED', order, orders: db.orders });
   res.json({ order, orders: db.orders });
 });
 
@@ -440,7 +538,12 @@ async function startServer() {
         const db = getDatabase();
         const html = injectInitialData(template, db);
         
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+        res.status(200).set({ 
+          'Content-Type': 'text/html',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }).end(html);
       } catch (e) {
         vite.ssrFixStacktrace(e as Error);
         next(e);
@@ -462,7 +565,12 @@ async function startServer() {
         let template = fs.readFileSync(indexPath, 'utf-8');
         const db = getDatabase();
         const html = injectInitialData(template, db);
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+        res.status(200).set({ 
+          'Content-Type': 'text/html',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }).end(html);
       } else {
         res.status(404).send('Application not built');
       }

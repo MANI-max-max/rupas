@@ -201,6 +201,34 @@ export const StorageService = {
     return updated;
   },
 
+  async deleteProductAsync(id: string): Promise<Product[]> {
+    // 1. Immediately record in persistent blacklist locally
+    const deletedIds = this.getDeletedProductIds();
+    if (!deletedIds.includes(id)) {
+      this.saveDeletedProductIds([...deletedIds, id]);
+    }
+
+    // 2. Remove product from local array
+    const current = this.getProducts();
+    const updated = current.filter(p => p.id !== id);
+    this.saveProducts(updated);
+    safeSet(STORAGE_KEYS.PRODUCTS_INITIALIZED, true);
+
+    // 3. Immediately send permanent server delete and await broadcast
+    try {
+      await fetch(`/api/products/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store',
+      });
+    } catch (err) {
+      console.warn('[Sync] Server permanent delete network warning:', err);
+    }
+
+    return updated;
+  },
+
   deleteProduct(id: string): Product[] {
     // 1. Permanently record deletion in persistent blacklist
     const deletedIds = this.getDeletedProductIds();
@@ -218,7 +246,10 @@ export const StorageService = {
 
     // 4. PERMANENT SERVER DELETE: Guarantee other devices also permanently remove this product
     fetch(`/api/products/${encodeURIComponent(id)}`, { 
-      method: 'DELETE' 
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-store',
     }).catch(err => {
       console.warn('[Sync] Server permanent delete failed:', err);
     });
@@ -685,13 +716,19 @@ export const StorageService = {
       if (localDeletedIds.length > 0) {
         await fetch('/api/products/batch-delete', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify({ ids: localDeletedIds }),
         }).catch(() => {});
       }
 
-      // 2. Fetch authoritative snapshot
-      const res = await fetch('/api/sync');
+      // 2. Fetch authoritative snapshot with cache busting
+      const res = await fetch(`/api/sync?_t=${Date.now()}`, {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Accept': 'application/json' }
+      });
       if (!res.ok) return null;
       const data = await res.json();
 

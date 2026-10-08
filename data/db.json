@@ -1,31 +1,6 @@
 {
   "products": [
     {
-      "id": "prod-1",
-      "title": "Sony WH-1000XM5 Wireless Noise Cancelling Headphones",
-      "titleBn": "সোনি WH-1000XM5 ওয়্যারলেস নয়েজ ক্যানসেলিং হেডফোন",
-      "description": "Industry leading active noise cancellation with 8 microphones, 30 hours battery life, ultra-comfortable lightweight design and crystal clear hands-free calling.",
-      "descriptionBn": "অতুলনীয় অ্যাক্টিভ নয়েজ ক্যানসেলেশন, ৩০ ঘণ্টার ব্যাটারি লাইফ ও প্রিমিয়াম সাউন্ড কোয়ালিটি।",
-      "category": "electronics",
-      "platform": "amazon",
-      "affiliateUrl": "https://www.amazon.in/dp/B09XS7JWHH?tag=dealhub-21",
-      "imageUrl": "/images/hero_affiliate_deals_1791387714076.jpg",
-      "originalPrice": 29990,
-      "dealPrice": 24990,
-      "discountPercentage": 17,
-      "rating": 4.8,
-      "reviewCount": 3420,
-      "couponCode": "AMZTECH1000",
-      "badge": "Best Seller",
-      "inStock": true,
-      "videoUrl": "https://www.youtube-nocookie.com/embed/1kL89_T6VqY",
-      "clicksCount": 412,
-      "cartCount": 88,
-      "purchaseCount": 46,
-      "featured": true,
-      "createdAt": "2026-09-15T10:00:00Z"
-    },
-    {
       "id": "prod-2",
       "title": "Realme Buds Air 6 Pro ANC TWS Earbuds",
       "titleBn": "রিয়েলমি বাডস এয়ার ৬ প্রো এএনসি ইয়ারবাডস",
@@ -148,7 +123,9 @@
       "createdAt": "2026-09-27T09:00:00Z"
     }
   ],
-  "deletedProductIds": [],
+  "deletedProductIds": [
+    "prod-1"
+  ],
   "banners": [
     {
       "id": "banner-1",
@@ -362,5 +339,5 @@
       "notes": "High intent keyword search campaign"
     }
   ],
-  "updatedAt": "2026-10-08T18:58:59.917Z"
+  "updatedAt": "2026-10-08T19:08:25.689Z"
 }

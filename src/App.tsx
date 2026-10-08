@@ -13,6 +13,7 @@ import {
   PixelEvent 
 } from './types';
 import { StorageService } from './services/storage';
+import { RealtimeSync } from './services/realtimeSync';
 import { Language, translations } from './translations';
 import { Navbar } from './components/Navbar';
 import { MobileDrawer } from './components/MobileDrawer';
@@ -92,28 +93,62 @@ export default function App() {
     // Record initial PageView pixel event
     StorageService.recordPixelEvent('PageView');
 
-    // Cross-Device Live Synchronization:
-    // Sync with server immediately so deletions made on other devices are reflected
-    const syncData = () => {
-      StorageService.syncWithServer().then(synced => {
-        if (synced) {
-          setProducts(synced.products);
-          setBanners(synced.banners);
-          setVideos(synced.videos);
-          setOrders(synced.orders);
-          setReviews(synced.reviews);
-        }
-      });
-    };
-    syncData();
+    // Cross-Device Instant Real-Time Synchronization:
+    // 1. Initialize Realtime SSE stream & fast synchronization
+    RealtimeSync.init();
 
-    // Re-sync when user switches back to the tab
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        syncData();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // 2. Listen for instantaneous delete broadcast from any phone / computer / tab
+    const unsubProductDeleted = RealtimeSync.onProductDeleted((deletedId) => {
+      setProducts(prev => prev.filter(p => p.id !== deletedId));
+      setCart(prev => {
+        const filtered = prev.filter(item => item.product.id !== deletedId);
+        if (filtered.length !== prev.length) {
+          StorageService.saveCart(filtered);
+        }
+        return filtered;
+      });
+      setActiveDetailProduct(curr => (curr?.id === deletedId ? null : curr));
+    });
+
+    const unsubBatchDeleted = RealtimeSync.onProductsBatchDeleted((deletedIds) => {
+      const idSet = new Set(deletedIds);
+      setProducts(prev => prev.filter(p => !idSet.has(p.id)));
+      setCart(prev => {
+        const filtered = prev.filter(item => !idSet.has(item.product.id));
+        if (filtered.length !== prev.length) {
+          StorageService.saveCart(filtered);
+        }
+        return filtered;
+      });
+      setActiveDetailProduct(curr => (curr && idSet.has(curr.id) ? null : curr));
+    });
+
+    const unsubProductSaved = RealtimeSync.onProductSaved(() => {
+      setProducts(StorageService.getProducts());
+    });
+
+    const unsubBannerDeleted = RealtimeSync.onBannerDeleted((deletedId) => {
+      setBanners(prev => prev.filter(b => b.id !== deletedId));
+    });
+
+    const unsubVideoDeleted = RealtimeSync.onVideoDeleted((deletedId) => {
+      setVideos(prev => prev.filter(v => v.id !== deletedId));
+    });
+
+    const unsubOrdersUpdated = RealtimeSync.onOrdersUpdated((updatedOrders) => {
+      setOrders(updatedOrders);
+    });
+
+    const unsubGenericSync = RealtimeSync.onGenericSync(() => {
+      setProducts(StorageService.getProducts());
+      setBanners(StorageService.getBanners());
+      setVideos(StorageService.getVideos());
+      setOrders(StorageService.getOrders());
+      setReviews(StorageService.getReviews());
+    });
+
+    // Initial load sync
+    RealtimeSync.pollServer();
 
     // Personal Admin Access Triggers (Private/Secret to Owner):
     // 1. URL parameter or Hash: ?admin=true or #admin
@@ -142,7 +177,13 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      unsubProductDeleted();
+      unsubBatchDeleted();
+      unsubProductSaved();
+      unsubBannerDeleted();
+      unsubVideoDeleted();
+      unsubOrdersUpdated();
+      unsubGenericSync();
       window.removeEventListener('hashchange', handleHashChange);
       window.removeEventListener('keydown', handleKeyDown);
     };
@@ -271,9 +312,9 @@ export default function App() {
     showToast('Product updated successfully!');
   };
 
-  const handleDeleteProduct = (id: string) => {
-    const updated = StorageService.deleteProduct(id);
-    setProducts(updated);
+  const handleDeleteProduct = async (id: string) => {
+    // 1. Immediately remove from local state
+    setProducts(prev => prev.filter(p => p.id !== id));
 
     // Also remove from active cart if present
     setCart(prev => {
@@ -288,7 +329,10 @@ export default function App() {
       setActiveDetailProduct(null);
     }
 
-    showToast('Product deleted permanently!');
+    showToast('Product permanently deleted from all devices!');
+
+    // 2. Permanently delete from server and broadcast instant real-time delete to all devices
+    await StorageService.deleteProductAsync(id);
   };
 
   const handleAddBanner = (banner: AdBanner) => {
