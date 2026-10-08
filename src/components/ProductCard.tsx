@@ -114,7 +114,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       </div>
 
       {/* Product Content Body */}
-      <div className="flex-1 p-4 flex flex-col justify-between">
+      <div className="flex-1 p-3.5 sm:p-4 flex flex-col justify-between">
         <div>
           {/* Unboxed Metadata (Category · Platform · Rating) strictly following anti-pill rule */}
           <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mb-1.5">
@@ -155,7 +155,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {product.couponCode && (
             <div 
               onClick={handleCopyCoupon}
-              className="mt-2.5 flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-dashed border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-300 text-xs transition-colors hover:bg-amber-100/70"
+              className="mt-2.5 flex items-center justify-between px-2.5 py-1.5 min-h-[36px] rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-dashed border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-300 text-xs transition-colors hover:bg-amber-100/70 cursor-pointer"
             >
               <div className="flex items-center gap-1.5">
                 <Tag className="w-3 h-3 text-amber-600 dark:text-amber-400" />
@@ -173,14 +173,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </div>
 
         {/* Primary Affiliate Outbound Button (Full-width SHOP NOW) */}
-        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+        <div className="mt-3.5 pt-3 border-t border-slate-100 dark:border-slate-800">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onAffiliateClick(product);
             }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs tracking-wide transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer uppercase"
+            className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs tracking-wide transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer uppercase"
           >
             <span>SHOP NOW</span>
             <ArrowUpRight className="w-4 h-4" />

@@ -328,7 +328,7 @@ export const INITIAL_ORDERS: DirectOrder[] = [
         productTitle: 'Realme Buds Air 6 Pro ANC TWS Earbuds',
         quantity: 1,
         price: 4499,
-        imageUrl: '/src/assets/images/product_anc_earbuds_1791387733714.jpg'
+        imageUrl: '/images/product_anc_earbuds_1791387733714.jpg'
       }
     ],
     totalAmount: 4499,
@@ -353,7 +353,7 @@ export const INITIAL_ORDERS: DirectOrder[] = [
         productTitle: 'Premium Embroidered Pure Cotton Kurta & Dupatta Set',
         quantity: 2,
         price: 699,
-        imageUrl: '/src/assets/images/banner_ad_festive_sale_1791387761449.jpg'
+        imageUrl: '/images/banner_ad_festive_sale_1791387761449.jpg'
       }
     ],
     totalAmount: 1398,

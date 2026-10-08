@@ -58,6 +58,7 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
+  const [selectedTrackingOrderId, setSelectedTrackingOrderId] = useState<string | null>(null);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
   const [activeDetailProduct, setActiveDetailProduct] = useState<Product | null>(null);
@@ -417,7 +418,7 @@ export default function App() {
       />
 
       {/* Main Landing Page Content */}
-      <main className="flex-1 pb-16 lg:pb-0" id="deals">
+      <main className="flex-1 pb-24 lg:pb-0" id="deals">
         
         {/* Hero Promotional Banner Slider */}
         <HeroBanner
@@ -443,9 +444,9 @@ export default function App() {
         />
 
         {/* Featured Products Grid */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 my-6" id="products-grid">
+        <section className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 my-4 sm:my-6" id="products-grid">
           {filteredProducts.length === 0 ? (
-            <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 space-y-3">
+            <div className="text-center py-12 sm:py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 space-y-3">
               <AlertCircle className="w-10 h-10 text-slate-400 mx-auto" />
               <h3 className="font-bold text-base text-slate-800 dark:text-slate-200">
                 No deals match your criteria
@@ -459,13 +460,13 @@ export default function App() {
                   setSelectedCategory('all');
                   setSearchQuery('');
                 }}
-                className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl hover:bg-amber-400 cursor-pointer"
+                className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl hover:bg-amber-400 cursor-pointer min-h-[38px]"
               >
                 Reset All Filters
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {filteredProducts.map(product => (
                 <ProductCard
                   key={product.id}
@@ -540,14 +541,24 @@ export default function App() {
         cartItems={cart}
         lang={lang}
         onOrderSuccess={handleOrderSuccess}
+        onTrackOrder={(orderId) => {
+          setSelectedTrackingOrderId(orderId);
+          setIsTrackingOpen(true);
+        }}
       />
 
       {/* Order Tracking Modal */}
       <OrderTrackingModal
         isOpen={isTrackingOpen}
-        onClose={() => setIsTrackingOpen(false)}
+        onClose={() => {
+          setIsTrackingOpen(false);
+          setSelectedTrackingOrderId(null);
+        }}
         orders={orders}
         lang={lang}
+        selectedOrderId={selectedTrackingOrderId}
+        onSelectOrderId={setSelectedTrackingOrderId}
+        onRefreshOrders={() => setOrders(StorageService.getOrders())}
       />
 
       {/* Write Customer Review Modal */}

@@ -10,7 +10,8 @@ import {
   ArrowRight,
   Truck,
   Copy,
-  Check
+  Check,
+  PackageCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CartItem, DirectOrder } from '../types';
@@ -22,6 +23,7 @@ interface DirectCheckoutModalProps {
   cartItems: CartItem[];
   lang: Language;
   onOrderSuccess: (order: DirectOrder) => void;
+  onTrackOrder?: (orderId: string) => void;
 }
 
 export const DirectCheckoutModal: React.FC<DirectCheckoutModalProps> = ({
@@ -30,6 +32,7 @@ export const DirectCheckoutModal: React.FC<DirectCheckoutModalProps> = ({
   cartItems,
   lang,
   onOrderSuccess,
+  onTrackOrder,
 }) => {
   if (!isOpen) return null;
   const t = translations[lang];
@@ -199,10 +202,24 @@ export const DirectCheckoutModal: React.FC<DirectCheckoutModalProps> = ({
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
+                {onTrackOrder && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onTrackOrder(completedOrder.id);
+                    }}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer shadow-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                  >
+                    <PackageCheck className="w-4 h-4" />
+                    <span>Track This Order</span>
+                  </button>
+                )}
                 <button
+                  type="button"
                   onClick={onClose}
-                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer shadow-sm"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer"
                 >
                   Back to Deals
                 </button>

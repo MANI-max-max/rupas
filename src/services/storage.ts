@@ -226,11 +226,21 @@ export const StorageService = {
   // Orders
   getOrders(): DirectOrder[] {
     const orders = safeGet<DirectOrder[]>(STORAGE_KEYS.ORDERS, []);
+    const sourceOrders = (!orders || orders.length === 0) ? INITIAL_ORDERS : orders;
+    
+    // Sanitize image paths for robust display
+    const sanitized = sourceOrders.map(order => ({
+      ...order,
+      items: order.items.map(item => ({
+        ...item,
+        imageUrl: resolveImageUrl(item.imageUrl, 'earbuds'),
+      }))
+    }));
+
     if (!orders || orders.length === 0) {
-      safeSet(STORAGE_KEYS.ORDERS, INITIAL_ORDERS);
-      return INITIAL_ORDERS;
+      safeSet(STORAGE_KEYS.ORDERS, sanitized);
     }
-    return orders;
+    return sanitized;
   },
 
   saveOrders(orders: DirectOrder[]): void {
