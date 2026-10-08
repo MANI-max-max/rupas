@@ -92,6 +92,29 @@ export default function App() {
     // Record initial PageView pixel event
     StorageService.recordPixelEvent('PageView');
 
+    // Cross-Device Live Synchronization:
+    // Sync with server immediately so deletions made on other devices are reflected
+    const syncData = () => {
+      StorageService.syncWithServer().then(synced => {
+        if (synced) {
+          setProducts(synced.products);
+          setBanners(synced.banners);
+          setVideos(synced.videos);
+          setOrders(synced.orders);
+          setReviews(synced.reviews);
+        }
+      });
+    };
+    syncData();
+
+    // Re-sync when user switches back to the tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     // Personal Admin Access Triggers (Private/Secret to Owner):
     // 1. URL parameter or Hash: ?admin=true or #admin
     const checkAdminUrl = () => {
@@ -119,6 +142,7 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('hashchange', handleHashChange);
       window.removeEventListener('keydown', handleKeyDown);
     };
@@ -250,7 +274,21 @@ export default function App() {
   const handleDeleteProduct = (id: string) => {
     const updated = StorageService.deleteProduct(id);
     setProducts(updated);
-    showToast('Product deleted!');
+
+    // Also remove from active cart if present
+    setCart(prev => {
+      const filtered = prev.filter(item => item.product.id !== id);
+      if (filtered.length !== prev.length) {
+        StorageService.saveCart(filtered);
+      }
+      return filtered;
+    });
+
+    if (activeDetailProduct?.id === id) {
+      setActiveDetailProduct(null);
+    }
+
+    showToast('Product deleted permanently!');
   };
 
   const handleAddBanner = (banner: AdBanner) => {
@@ -268,10 +306,9 @@ export default function App() {
   };
 
   const handleDeleteBanner = (id: string) => {
-    const current = StorageService.getBanners();
-    const updated = current.filter(b => b.id !== id);
-    StorageService.saveBanners(updated);
+    const updated = StorageService.deleteBanner(id);
     setBanners(updated);
+    showToast('Banner deleted!');
   };
 
   const handleAddVideo = (video: VideoAd) => {
@@ -289,10 +326,9 @@ export default function App() {
   };
 
   const handleDeleteVideo = (id: string) => {
-    const current = StorageService.getVideos();
-    const updated = current.filter(v => v.id !== id);
-    StorageService.saveVideos(updated);
+    const updated = StorageService.deleteVideo(id);
     setVideos(updated);
+    showToast('Video review deleted!');
   };
 
   const handleAddAdSpend = (spend: AdSpendRecord) => {

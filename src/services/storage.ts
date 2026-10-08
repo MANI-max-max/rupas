@@ -22,13 +22,45 @@ import {
 } from '../data/mockData';
 import { resolveImageUrl, formatYouTubeEmbedUrl } from '../utils/mediaUtils';
 
+declare global {
+  interface Window {
+    __INITIAL_SERVER_DATA__?: {
+      products?: Product[];
+      deletedProductIds?: string[];
+      banners?: AdBanner[];
+      deletedBannerIds?: string[];
+      videos?: VideoAd[];
+      deletedVideoIds?: string[];
+      orders?: DirectOrder[];
+      reviews?: CustomerReview[];
+      adSpends?: AdSpendRecord[];
+      updatedAt?: string;
+    };
+  }
+}
+
 const STORAGE_KEYS = {
   PRODUCTS: 'dealhub_products',
+  DELETED_PRODUCT_IDS: 'dealhub_deleted_product_ids',
+  PRODUCTS_INITIALIZED: 'dealhub_products_initialized_v2',
+
   BANNERS: 'dealhub_banners',
+  DELETED_BANNER_IDS: 'dealhub_deleted_banner_ids',
+  BANNERS_INITIALIZED: 'dealhub_banners_initialized_v2',
+
   VIDEOS: 'dealhub_videos',
+  DELETED_VIDEO_IDS: 'dealhub_deleted_video_ids',
+  VIDEOS_INITIALIZED: 'dealhub_videos_initialized_v2',
+
   AD_SPENDS: 'dealhub_ad_spends',
+  DELETED_AD_SPEND_IDS: 'dealhub_deleted_ad_spend_ids',
+  AD_SPENDS_INITIALIZED: 'dealhub_ad_spends_initialized_v2',
+
   ORDERS: 'dealhub_orders',
   REVIEWS: 'dealhub_reviews',
+  DELETED_REVIEW_IDS: 'dealhub_deleted_review_ids',
+  REVIEWS_INITIALIZED: 'dealhub_reviews_initialized_v2',
+
   EMAIL_LOGS: 'dealhub_email_logs',
   PRICE_ALERTS: 'rupas_price_alerts',
   PIXEL_EVENTS: 'dealhub_pixel_events',
@@ -58,13 +90,71 @@ function safeSet<T>(key: string, value: T): void {
 }
 
 export const StorageService = {
+  // Deleted tracking helpers (ensures deleted items NEVER reappear on refresh)
+  getDeletedProductIds(): string[] {
+    return safeGet<string[]>(STORAGE_KEYS.DELETED_PRODUCT_IDS, []);
+  },
+  saveDeletedProductIds(ids: string[]): void {
+    safeSet(STORAGE_KEYS.DELETED_PRODUCT_IDS, ids);
+  },
+
+  getDeletedBannerIds(): string[] {
+    return safeGet<string[]>(STORAGE_KEYS.DELETED_BANNER_IDS, []);
+  },
+  saveDeletedBannerIds(ids: string[]): void {
+    safeSet(STORAGE_KEYS.DELETED_BANNER_IDS, ids);
+  },
+
+  getDeletedVideoIds(): string[] {
+    return safeGet<string[]>(STORAGE_KEYS.DELETED_VIDEO_IDS, []);
+  },
+  saveDeletedVideoIds(ids: string[]): void {
+    safeSet(STORAGE_KEYS.DELETED_VIDEO_IDS, ids);
+  },
+
+  getDeletedReviewIds(): string[] {
+    return safeGet<string[]>(STORAGE_KEYS.DELETED_REVIEW_IDS, []);
+  },
+  saveDeletedReviewIds(ids: string[]): void {
+    safeSet(STORAGE_KEYS.DELETED_REVIEW_IDS, ids);
+  },
+
   // Products
   getProducts(): Product[] {
-    let prods = safeGet<Product[]>(STORAGE_KEYS.PRODUCTS, []);
-    if (!prods || prods.length === 0) {
-      safeSet(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
-      prods = INITIAL_PRODUCTS;
+    // If server injected authoritative synchronized data, absorb it immediately
+    if (typeof window !== 'undefined' && window.__INITIAL_SERVER_DATA__) {
+      const serverData = window.__INITIAL_SERVER_DATA__;
+      if (Array.isArray(serverData.deletedProductIds) && serverData.deletedProductIds.length > 0) {
+        const localDeleted = safeGet<string[]>(STORAGE_KEYS.DELETED_PRODUCT_IDS, []);
+        const merged = Array.from(new Set([...localDeleted, ...serverData.deletedProductIds]));
+        safeSet(STORAGE_KEYS.DELETED_PRODUCT_IDS, merged);
+      }
+      if (Array.isArray(serverData.products)) {
+        const currentDeleted = this.getDeletedProductIds();
+        const serverFiltered = serverData.products.filter(p => !currentDeleted.includes(p.id));
+        safeSet(STORAGE_KEYS.PRODUCTS, serverFiltered);
+        safeSet(STORAGE_KEYS.PRODUCTS_INITIALIZED, true);
+        window.__INITIAL_SERVER_DATA__.products = undefined;
+      }
     }
+
+    const isInitialized = safeGet<boolean>(STORAGE_KEYS.PRODUCTS_INITIALIZED, false);
+    const deletedIds = this.getDeletedProductIds();
+
+    let prods: Product[];
+    if (!isInitialized) {
+      // First run: Seed default catalog, excluding any previously deleted IDs
+      safeSet(STORAGE_KEYS.PRODUCTS_INITIALIZED, true);
+      prods = INITIAL_PRODUCTS.filter(p => !deletedIds.includes(p.id));
+      safeSet(STORAGE_KEYS.PRODUCTS, prods);
+    } else {
+      prods = safeGet<Product[]>(STORAGE_KEYS.PRODUCTS, []);
+      // Guarantee that deleted items never resurrect on page reload or across devices
+      if (deletedIds.length > 0) {
+        prods = prods.filter(p => !deletedIds.includes(p.id));
+      }
+    }
+
     return prods.map(p => ({
       ...p,
       imageUrl: resolveImageUrl(p.imageUrl, 'hero'),
@@ -77,9 +167,22 @@ export const StorageService = {
   },
 
   addProduct(product: Product): Product[] {
+    // Un-blacklist this ID if it was ever in deleted list
+    const deletedIds = this.getDeletedProductIds().filter(id => id !== product.id);
+    this.saveDeletedProductIds(deletedIds);
+
     const current = this.getProducts();
     const updated = [product, ...current];
     this.saveProducts(updated);
+    safeSet(STORAGE_KEYS.PRODUCTS_INITIALIZED, true);
+
+    // Cross-Device Sync: Add on server
+    fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(product),
+    }).catch(err => console.warn('[Sync] Server add failed:', err));
+
     return updated;
   },
 
@@ -87,14 +190,52 @@ export const StorageService = {
     const current = this.getProducts();
     const updated = current.map(p => p.id === product.id ? product : p);
     this.saveProducts(updated);
+
+    // Cross-Device Sync: Update on server
+    fetch(`/api/products/${encodeURIComponent(product.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(product),
+    }).catch(err => console.warn('[Sync] Server update failed:', err));
+
     return updated;
   },
 
   deleteProduct(id: string): Product[] {
+    // 1. Permanently record deletion in persistent blacklist
+    const deletedIds = this.getDeletedProductIds();
+    if (!deletedIds.includes(id)) {
+      this.saveDeletedProductIds([...deletedIds, id]);
+    }
+
+    // 2. Remove product from stored array
     const current = this.getProducts();
     const updated = current.filter(p => p.id !== id);
     this.saveProducts(updated);
+
+    // 3. Ensure initialized flag remains true so empty list never triggers initial data reload
+    safeSet(STORAGE_KEYS.PRODUCTS_INITIALIZED, true);
+
+    // 4. PERMANENT SERVER DELETE: Guarantee other devices also permanently remove this product
+    fetch(`/api/products/${encodeURIComponent(id)}`, { 
+      method: 'DELETE' 
+    }).catch(err => {
+      console.warn('[Sync] Server permanent delete failed:', err);
+    });
+
     return updated;
+  },
+
+  resetToDefaultCatalog(): Product[] {
+    safeSet(STORAGE_KEYS.DELETED_PRODUCT_IDS, []);
+    safeSet(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
+    safeSet(STORAGE_KEYS.PRODUCTS_INITIALIZED, true);
+
+    fetch('/api/products/reset', { method: 'POST' }).catch(err => {
+      console.warn('[Sync] Reset failed on server:', err);
+    });
+
+    return this.getProducts();
   },
 
   recordProductClick(id: string, platform?: AffiliatePlatform): void {
@@ -144,11 +285,21 @@ export const StorageService = {
 
   // Banners
   getBanners(): AdBanner[] {
-    let banners = safeGet<AdBanner[]>(STORAGE_KEYS.BANNERS, []);
-    if (!banners || banners.length === 0) {
-      safeSet(STORAGE_KEYS.BANNERS, INITIAL_BANNERS);
-      banners = INITIAL_BANNERS;
+    const isInitialized = safeGet<boolean>(STORAGE_KEYS.BANNERS_INITIALIZED, false);
+    const deletedIds = this.getDeletedBannerIds();
+
+    let banners: AdBanner[];
+    if (!isInitialized) {
+      safeSet(STORAGE_KEYS.BANNERS_INITIALIZED, true);
+      banners = INITIAL_BANNERS.filter(b => !deletedIds.includes(b.id));
+      safeSet(STORAGE_KEYS.BANNERS, banners);
+    } else {
+      banners = safeGet<AdBanner[]>(STORAGE_KEYS.BANNERS, []);
+      if (deletedIds.length > 0) {
+        banners = banners.filter(b => !deletedIds.includes(b.id));
+      }
     }
+
     return banners.map(b => ({
       ...b,
       imageUrl: resolveImageUrl(b.imageUrl, 'hero'),
@@ -157,6 +308,23 @@ export const StorageService = {
 
   saveBanners(banners: AdBanner[]): void {
     safeSet(STORAGE_KEYS.BANNERS, banners);
+  },
+
+  deleteBanner(id: string): AdBanner[] {
+    const deletedIds = this.getDeletedBannerIds();
+    if (!deletedIds.includes(id)) {
+      this.saveDeletedBannerIds([...deletedIds, id]);
+    }
+    const current = this.getBanners();
+    const updated = current.filter(b => b.id !== id);
+    this.saveBanners(updated);
+    safeSet(STORAGE_KEYS.BANNERS_INITIALIZED, true);
+
+    fetch(`/api/banners/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(err => {
+      console.warn('[Sync] Server delete banner failed:', err);
+    });
+
+    return updated;
   },
 
   recordBannerClick(id: string): void {
@@ -170,11 +338,21 @@ export const StorageService = {
 
   // Videos
   getVideos(): VideoAd[] {
-    let videos = safeGet<VideoAd[]>(STORAGE_KEYS.VIDEOS, []);
-    if (!videos || videos.length === 0) {
-      safeSet(STORAGE_KEYS.VIDEOS, INITIAL_VIDEOS);
-      videos = INITIAL_VIDEOS;
+    const isInitialized = safeGet<boolean>(STORAGE_KEYS.VIDEOS_INITIALIZED, false);
+    const deletedIds = this.getDeletedVideoIds();
+
+    let videos: VideoAd[];
+    if (!isInitialized) {
+      safeSet(STORAGE_KEYS.VIDEOS_INITIALIZED, true);
+      videos = INITIAL_VIDEOS.filter(v => !deletedIds.includes(v.id));
+      safeSet(STORAGE_KEYS.VIDEOS, videos);
+    } else {
+      videos = safeGet<VideoAd[]>(STORAGE_KEYS.VIDEOS, []);
+      if (deletedIds.length > 0) {
+        videos = videos.filter(v => !deletedIds.includes(v.id));
+      }
     }
+
     return videos.map(v => ({
       ...v,
       thumbnailUrl: resolveImageUrl(v.thumbnailUrl, 'earbuds'),
@@ -186,6 +364,23 @@ export const StorageService = {
     safeSet(STORAGE_KEYS.VIDEOS, videos);
   },
 
+  deleteVideo(id: string): VideoAd[] {
+    const deletedIds = this.getDeletedVideoIds();
+    if (!deletedIds.includes(id)) {
+      this.saveDeletedVideoIds([...deletedIds, id]);
+    }
+    const current = this.getVideos();
+    const updated = current.filter(v => v.id !== id);
+    this.saveVideos(updated);
+    safeSet(STORAGE_KEYS.VIDEOS_INITIALIZED, true);
+
+    fetch(`/api/videos/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(err => {
+      console.warn('[Sync] Server delete video failed:', err);
+    });
+
+    return updated;
+  },
+
   recordVideoClick(id: string): void {
     const current = this.getVideos();
     const target = current.find(v => v.id === id);
@@ -195,12 +390,28 @@ export const StorageService = {
     }
   },
 
+  getDeletedAdSpendIds(): string[] {
+    return safeGet<string[]>(STORAGE_KEYS.DELETED_AD_SPEND_IDS, []);
+  },
+  saveDeletedAdSpendIds(ids: string[]): void {
+    safeSet(STORAGE_KEYS.DELETED_AD_SPEND_IDS, ids);
+  },
+
   // Ad Spends
   getAdSpends(): AdSpendRecord[] {
-    const spends = safeGet<AdSpendRecord[]>(STORAGE_KEYS.AD_SPENDS, []);
-    if (!spends || spends.length === 0) {
-      safeSet(STORAGE_KEYS.AD_SPENDS, INITIAL_AD_SPENDS);
-      return INITIAL_AD_SPENDS;
+    const isInitialized = safeGet<boolean>(STORAGE_KEYS.AD_SPENDS_INITIALIZED, false);
+    const deletedIds = this.getDeletedAdSpendIds();
+
+    let spends: AdSpendRecord[];
+    if (!isInitialized) {
+      safeSet(STORAGE_KEYS.AD_SPENDS_INITIALIZED, true);
+      spends = INITIAL_AD_SPENDS.filter(s => !deletedIds.includes(s.id));
+      safeSet(STORAGE_KEYS.AD_SPENDS, spends);
+    } else {
+      spends = safeGet<AdSpendRecord[]>(STORAGE_KEYS.AD_SPENDS, []);
+      if (deletedIds.length > 0) {
+        spends = spends.filter(s => !deletedIds.includes(s.id));
+      }
     }
     return spends;
   },
@@ -213,13 +424,19 @@ export const StorageService = {
     const current = this.getAdSpends();
     const updated = [spend, ...current];
     this.saveAdSpends(updated);
+    safeSet(STORAGE_KEYS.AD_SPENDS_INITIALIZED, true);
     return updated;
   },
 
   deleteAdSpend(id: string): AdSpendRecord[] {
+    const deletedIds = this.getDeletedAdSpendIds();
+    if (!deletedIds.includes(id)) {
+      this.saveDeletedAdSpendIds([...deletedIds, id]);
+    }
     const current = this.getAdSpends();
     const updated = current.filter(s => s.id !== id);
     this.saveAdSpends(updated);
+    safeSet(STORAGE_KEYS.AD_SPENDS_INITIALIZED, true);
     return updated;
   },
 
@@ -257,6 +474,13 @@ export const StorageService = {
       this.recordProductPurchase(item.productId);
     });
 
+    // Cross-Device Sync: Send to server so other devices see this order
+    fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(order),
+    }).catch(err => console.warn('[Sync] Server add order failed:', err));
+
     // Create automatic email notification
     this.addEmailLog({
       id: `email-${Date.now()}`,
@@ -276,15 +500,32 @@ export const StorageService = {
     const current = this.getOrders();
     const updated = current.map(o => o.id === orderId ? { ...o, orderStatus: status } : o);
     this.saveOrders(updated);
+
+    // Cross-Device Sync: Update on server
+    fetch(`/api/orders/${encodeURIComponent(orderId)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    }).catch(err => console.warn('[Sync] Server order status update failed:', err));
+
     return updated;
   },
 
   // Reviews
   getReviews(): CustomerReview[] {
-    const reviews = safeGet<CustomerReview[]>(STORAGE_KEYS.REVIEWS, []);
-    if (!reviews || reviews.length === 0) {
-      safeSet(STORAGE_KEYS.REVIEWS, INITIAL_REVIEWS);
-      return INITIAL_REVIEWS;
+    const isInitialized = safeGet<boolean>(STORAGE_KEYS.REVIEWS_INITIALIZED, false);
+    const deletedIds = this.getDeletedReviewIds();
+
+    let reviews: CustomerReview[];
+    if (!isInitialized) {
+      safeSet(STORAGE_KEYS.REVIEWS_INITIALIZED, true);
+      reviews = INITIAL_REVIEWS.filter(r => !deletedIds.includes(r.id));
+      safeSet(STORAGE_KEYS.REVIEWS, reviews);
+    } else {
+      reviews = safeGet<CustomerReview[]>(STORAGE_KEYS.REVIEWS, []);
+      if (deletedIds.length > 0) {
+        reviews = reviews.filter(r => !deletedIds.includes(r.id));
+      }
     }
     return reviews;
   },
@@ -294,16 +535,32 @@ export const StorageService = {
   },
 
   addReview(review: CustomerReview): CustomerReview[] {
+    const deletedIds = this.getDeletedReviewIds().filter(id => id !== review.id);
+    this.saveDeletedReviewIds(deletedIds);
+
     const current = this.getReviews();
     const updated = [review, ...current];
     this.saveReviews(updated);
+    safeSet(STORAGE_KEYS.REVIEWS_INITIALIZED, true);
+
+    fetch('/api/reviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(review),
+    }).catch(err => console.warn('[Sync] Server add review failed:', err));
+
     return updated;
   },
 
   deleteReview(id: string): CustomerReview[] {
+    const deletedIds = this.getDeletedReviewIds();
+    if (!deletedIds.includes(id)) {
+      this.saveDeletedReviewIds([...deletedIds, id]);
+    }
     const current = this.getReviews();
     const updated = current.filter(r => r.id !== id);
     this.saveReviews(updated);
+    safeSet(STORAGE_KEYS.REVIEWS_INITIALIZED, true);
     return updated;
   },
 
@@ -412,5 +669,101 @@ export const StorageService = {
 
   setLang(lang: 'bn' | 'en'): void {
     localStorage.setItem(STORAGE_KEYS.LANG, lang);
+  },
+
+  // Cross-Device Full Synchronization
+  async syncWithServer(): Promise<{
+    products: Product[];
+    banners: AdBanner[];
+    videos: VideoAd[];
+    orders: DirectOrder[];
+    reviews: CustomerReview[];
+  } | null> {
+    try {
+      // 1. Proactively sync any previously deleted product IDs from this browser to server
+      const localDeletedIds = this.getDeletedProductIds();
+      if (localDeletedIds.length > 0) {
+        await fetch('/api/products/batch-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: localDeletedIds }),
+        }).catch(() => {});
+      }
+
+      // 2. Fetch authoritative snapshot
+      const res = await fetch('/api/sync');
+      if (!res.ok) return null;
+      const data = await res.json();
+
+      // 3. Merge deleted IDs from server
+      if (Array.isArray(data.deletedProductIds)) {
+        const mergedDeleted = Array.from(new Set([...this.getDeletedProductIds(), ...data.deletedProductIds]));
+        this.saveDeletedProductIds(mergedDeleted);
+      }
+
+      // 4. Update products
+      if (Array.isArray(data.products)) {
+        const deletedIds = this.getDeletedProductIds();
+        const activeProds = data.products
+          .filter((p: Product) => !deletedIds.includes(p.id))
+          .map((p: Product) => ({
+            ...p,
+            imageUrl: resolveImageUrl(p.imageUrl, 'hero'),
+            videoUrl: p.videoUrl ? formatYouTubeEmbedUrl(p.videoUrl) : undefined,
+          }));
+        this.saveProducts(activeProds);
+        safeSet(STORAGE_KEYS.PRODUCTS_INITIALIZED, true);
+      }
+
+      // 5. Update banners
+      if (Array.isArray(data.banners)) {
+        const activeBanners = data.banners.map((b: AdBanner) => ({
+          ...b,
+          imageUrl: resolveImageUrl(b.imageUrl, 'hero'),
+        }));
+        this.saveBanners(activeBanners);
+        safeSet(STORAGE_KEYS.BANNERS_INITIALIZED, true);
+      }
+
+      // 6. Update videos
+      if (Array.isArray(data.videos)) {
+        const activeVideos = data.videos.map((v: VideoAd) => ({
+          ...v,
+          thumbnailUrl: resolveImageUrl(v.thumbnailUrl, 'earbuds'),
+          videoUrl: formatYouTubeEmbedUrl(v.videoUrl),
+        }));
+        this.saveVideos(activeVideos);
+        safeSet(STORAGE_KEYS.VIDEOS_INITIALIZED, true);
+      }
+
+      // 7. Update orders
+      if (Array.isArray(data.orders)) {
+        const sanitizedOrders = data.orders.map((o: DirectOrder) => ({
+          ...o,
+          items: o.items.map(it => ({
+            ...it,
+            imageUrl: resolveImageUrl(it.imageUrl, 'earbuds'),
+          }))
+        }));
+        this.saveOrders(sanitizedOrders);
+      }
+
+      // 8. Update reviews
+      if (Array.isArray(data.reviews)) {
+        this.saveReviews(data.reviews);
+        safeSet(STORAGE_KEYS.REVIEWS_INITIALIZED, true);
+      }
+
+      return {
+        products: this.getProducts(),
+        banners: this.getBanners(),
+        videos: this.getVideos(),
+        orders: this.getOrders(),
+        reviews: this.getReviews(),
+      };
+    } catch (err) {
+      console.warn('[Sync] Server sync check skipped (offline or network error):', err);
+      return null;
+    }
   }
 };

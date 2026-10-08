@@ -666,7 +666,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {products.map(p => (
+                      {products.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                            No products in catalog. Click "Add New Product" to create deals.
+                          </td>
+                        </tr>
+                      ) : (
+                        products.map(p => (
                         <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                           <td className="py-2.5 px-3">
                             <div className="flex items-center gap-2 max-w-xs">
@@ -714,7 +721,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
                           </td>
                         </tr>
-                      ))}
+                      )))}
                     </tbody>
                   </table>
                 </div>
